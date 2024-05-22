@@ -113,6 +113,30 @@ def printCSVline(filename, score, debug, file=sys.stdout):
     print(line, file=file, flush=True)
     return
 
+sigmoid = lambda x: 1.0 / (1.0 + np.exp(-x))
+
+def make_gradcam_heatmap(img_array, model, last_conv_layer_name, pred_index=None):
+    grad_model = tf.keras.models.Model(
+        model.inputs, [model.get_layer(last_conv_layer_name).output, model.output]
+    )
+
+    with tf.GradientTape() as tape:
+        last_conv_layer_output, preds = grad_model(img_array)
+        if pred_index is None:
+            pred_index = tf.argmax(preds[0])
+        class_channel = preds[:, pred_index]
+
+    grads = tape.gradient(class_channel, last_conv_layer_output)
+
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+
+    last_conv_layer_output = last_conv_layer_output[0]
+    heatmap = last_conv_layer_output @ pooled_grads[..., tf.newaxis]
+    heatmap = tf.squeeze(heatmap)
+
+    heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
+    return heatmap.numpy()
+
 def main():
     if len(sys.argv) != 3:
         print("Args: AS model folder, input file/folder")
@@ -153,11 +177,29 @@ def main():
     P1 = model.predict(input_dict)
     if len(P1) == 1: P1 = P1[0]
 
+    print(P1)
+
+    p1paper = tf.math.sigmoid(P1[0])
+    p1screen = tf.math.sigmoid(P1[1])
+
+    print("final P1(paper) sigmoid is :", p1paper.numpy())
+    print("final P1(screen) sigmoid is :", p1screen.numpy())
+    #last_conv_layer_name = "conv2d_13"
+
     # classify
-    score, debug = calculateScore(P1)
+    #score, debug = calculateScore(P1)
+
+    """ p1paper = sigmoid(debug["paper"]["wsum"])
+    p1screen = sigmoid(debug["screen"]["wsum"])
+
+    print("final P1(paper) sigmoid is :", p1paper)
+    print("final P1(screen) sigmoid is :", p1screen)
+
+    print("final debug is :", debug)
+    print("final score is :", score)
 
     # report
-    printCSVline(basename(filein), score, debug)
+    printCSVline(basename(filein), score, debug) """
 
 if __name__ == "__main__":
     main()

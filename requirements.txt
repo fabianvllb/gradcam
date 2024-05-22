@@ -4,3 +4,4 @@ onnxruntime==1.17.1
 opencv-python==4.9.0.80
 tensorflow==2.10.0
 tqdm==4.66.2
+scikit-learn==1.4.2
