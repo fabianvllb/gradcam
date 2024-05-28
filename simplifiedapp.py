@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 import tensorflow as tf
 from base import onnxbase
+import matplotlib.pyplot as plt
 
 FUSION_PARAMS = {
     "paper" : {
@@ -162,22 +163,30 @@ def main():
     assert  input_height == expected_dims[0] and \
             input_width == expected_dims[1] and \
             input_chans == expected_dims[2]
-    input_names = [input_layer.name for input_layer in model.inputs]
-    
-    printCSVheader()
+    #input_names = [input_layer.name for input_layer in model.inputs]
 
     # pre-process
     img = loadimage(filein)
+    print("img: ", img)
     pre_img = preprocess(img, input_height, input_width, scale)
+    ump_img = np.squeeze(pre_img)
+    ump_img = np.uint8(255 * ump_img)
     
+    print("ump_img: ", ump_img)
+
+    plt.imshow(ump_img)
+    plt.axis('off')
+    plt.show()
+
     # predict
     if not isinstance(pre_img, list):
         pre_img = [pre_img]
-    input_dict = {input_name: input_data for input_name, input_data in zip(input_names, pre_img)}
-    P1 = model.predict(input_dict)
+    #input_dict = {input_name: input_data for input_name, input_data in zip(input_names, pre_img)}
+    #P1 = model.predict(input_dict)
+    P1 = model(pre_img)
     if len(P1) == 1: P1 = P1[0]
 
-    print(P1)
+    print("P1: ", P1)
 
     p1paper = tf.math.sigmoid(P1[0])
     p1screen = tf.math.sigmoid(P1[1])
