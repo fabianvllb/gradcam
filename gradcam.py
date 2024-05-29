@@ -5,7 +5,6 @@ import cv2
 import tensorflow as tf
 from base import onnxbase
 import matplotlib.pyplot as plt
-import keras
 
 rsz = onnxbase(join(dirname(realpath(__file__)), "resize.ort"))
 
@@ -67,10 +66,26 @@ def load_augmented_model(
 def compute_gradcam(model, image, class_index=None):
     with tf.GradientTape() as tape:
         logits, conv_outputs = model(image)
-        print("P1: ", logits[0])
+        logits = logits[0]
+        
+        negated_logits = -logits
+        
         if class_index is None:
-            class_index = tf.argmin(logits[0])
-        class_score = logits[:, class_index]
+            print("logits: ", logits)
+            if logits.numpy()[0] > 0 and logits.numpy()[1] > 0:
+                print("Image is real")
+                class_index = tf.argmin(logits)
+                class_score = logits[class_index]
+            else:
+                class_index = tf.argmax(negated_logits)
+                if class_index == 0:
+                    print("Image is paper spoof")
+                else:
+                    print("Image is screen spoof")
+                class_score = negated_logits[class_index]
+        """ if class_index is None:
+            class_index = tf.argmin(logits[0]) """
+        
         print("class_score: ", class_score)
         
     grads = tape.gradient(class_score, conv_outputs)
@@ -96,31 +111,6 @@ def overlay_heatmap(heatmap, image, alpha=0.4):
     overlayed = cv2.addWeighted(image, alpha, heatmap, 1 - alpha, 0)
     return overlayed
 
-""" def save_and_display_gradcam(img, heatmap, size=3, cam_outfile_path=None, alpha=0.4):
-    # Rescale heatmap to a range 0-255
-    heatmap = np.uint8(255 * heatmap)
-
-    # Use jet colormap to colorize heatmap
-    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
-
-    fig, axes = plt.subplots(1, 2, figsize=(size * 2, size))
-
-    axes.imshow(img)
-
-    if cam_outfile_path is not None:
-        plt.savefig(cam_outfile_path)
-    plt.show() """
-
-""" def showimages(imglist, size=3, outfile=None):
-    n = len(imglist)
-    fig, axes = plt.subplots(1, n, figsize=(size * n, size))
-    for i, img in enumerate(imglist):
-        axes[i].imshow(img)
-    if outfile is not None:
-        plt.savefig(outfile)
-    plt.show()
-    return """
-
 def main():
     print('=================== Gradcam ==========================')
     if len(sys.argv) != 3:
@@ -141,40 +131,25 @@ def main():
         output_layer_name="output_layer"
     )
 
-    input_height = augmented_model.input_shape[1]
-    input_width = augmented_model.input_shape[2]
-    input_chans = augmented_model.input_shape[3]
-    assert  input_height == expected_dims[0] and \
-            input_width == expected_dims[1] and \
-            input_chans == expected_dims[2]
+    model_input_height = augmented_model.input_shape[1]
+    model_input_width = augmented_model.input_shape[2]
+    model_input_chans = augmented_model.input_shape[3]
+    assert  model_input_height == expected_dims[0] and \
+            model_input_width == expected_dims[1] and \
+            model_input_chans == expected_dims[2]
 
     image = loadimage(filein)
-    print("image", image)
-    prep_image = preprocess(image, input_height, input_width, scale)
-
-    rsz_img = np.uint8(255 * prep_image)
-    rsz_img = np.squeeze(rsz_img)
-
+    prep_image = preprocess(image, model_input_height, model_input_width, scale)
     heatmap = compute_gradcam(augmented_model, prep_image)
+    #print("heatmap: ", heatmap)
 
-    print("heatmap: ", heatmap)
-
-    # Display the heatmap
-    """ plt.matshow(heatmap)
-    plt.show() """
-    """ plt.imshow(heatmap, cmap='jet')
-    plt.colorbar()
-    plt.title('Grad-CAM Heatmap')
-    plt.show() """
-
-    #showimages([prep_image[0] * scale, heatmap])
+    if image.shape[1] != model_input_height or image.shape[2] != model_input_width:
+        rsz_img = np.uint8(255 * prep_image)
+        image = np.squeeze(rsz_img)
     overlayed_image = overlay_heatmap(heatmap, image)
-    #save_and_display_gradcam(img=prep_image, heatmap=heatmap, cam_outfile_path="grad.jpg")
 
     """ plt.matshow(heatmap)
     plt.show() """
-
-    # Display the overlaid image
     plt.imshow(overlayed_image)
     plt.axis('off')
     plt.show()
