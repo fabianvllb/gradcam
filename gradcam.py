@@ -35,12 +35,7 @@ def preprocess(img, input_height, input_width, scale=1.0):
       out = preprocessimage(img, input_height, input_width, scale=scale)
       return out
 
-def load_augmented_model(
-        model,
-        intermediate_layer_name=None,
-        output_layer_name=None):
-    """ assert model_file_path.endswith(".h5"), "Model extension must be .h5"
-    model = tf.keras.models.load_model(model_file_path) """
+def load_augmented_model(model, intermediate_layer_name=None, output_layer_name=None):
     output = model.outputs[0] if output_layer_name is None \
         else model.get_layer(output_layer_name).output
     assert len(output.shape) == 2, "Output shape must be (None, int)"
@@ -144,13 +139,14 @@ def compute_guided_backprop(model, image, class_index=None):
     
     return guided_backprop[0]
 
-def get_guided_gradcam(guided_backprop, gradcam_heatmap, original_image):
+def get_guided_gradcam(guided_backprop, gradcam_heatmap):
     guided_backprop = (guided_backprop - tf.reduce_min(guided_backprop)) / (tf.reduce_max(guided_backprop) - tf.reduce_min(guided_backprop))
     guided_backprop = tf.cast(guided_backprop * 255, tf.uint8).numpy()
     
     gradcam_heatmap_resized = cv2.resize(gradcam_heatmap.numpy(), (guided_backprop.shape[1], guided_backprop.shape[0]))
+    gradcam_heatmap_resized = np.repeat(gradcam_heatmap_resized[..., np.newaxis], 3, axis=-1)
     
-    combined_image = guided_backprop * gradcam_heatmap_resized[:, :, None]
+    combined_image = guided_backprop * gradcam_heatmap_resized
     combined_image = (combined_image - np.min(combined_image)) / (np.max(combined_image) - np.min(combined_image))
     combined_image = (combined_image * 255).astype(np.uint8)
     
@@ -166,13 +162,12 @@ def main():
     filein = sys.argv[2]
     assert exists(filein)
     assert exists(modelfile)
+    assert modelfile.endswith(".h5"), "Model extension must be .h5"
     
     expected_dims = (640,480,3)
     scale=255.0
 
-    assert modelfile.endswith(".h5"), "Model extension must be .h5"
     model = tf.keras.models.load_model(modelfile)
-
     model = modify_model_for_guided_backprop_leaky(model)
     
     augmented_model = load_augmented_model(
@@ -199,7 +194,7 @@ def main():
     input_image = tf.convert_to_tensor([original_image], dtype=tf.float32)
     guided_backprop = compute_guided_backprop(model, input_image)
     gradcam_overlay = overlay_heatmap_on_image(gradcam_heatmap, original_image)
-    guided_gradcam = get_guided_gradcam(guided_backprop, gradcam_heatmap, original_image)
+    guided_gradcam = get_guided_gradcam(guided_backprop, gradcam_heatmap)
 
     plt.figure(figsize=(15, 5))
     plt.subplot(1, 3, 1)
