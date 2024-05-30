@@ -36,21 +36,14 @@ def preprocess(img, input_height, input_width, scale=1.0):
       return out
 
 def load_augmented_model(
-        model_file_path,
+        model,
         intermediate_layer_name=None,
-        output_layer_name=None,
-        negate=False):
-    assert model_file_path.endswith(".h5"), "Model extension must be .h5"
-    try:
-        model = tf.keras.models.load_model(model_file_path)
-    except:
-        relu6 = lambda x: tf.keras.backend.relu(x, max_value=6)
-        model = tf.keras.models.load_model(model_file_path, custom_objects={"relu6":relu6})
+        output_layer_name=None):
+    """ assert model_file_path.endswith(".h5"), "Model extension must be .h5"
+    model = tf.keras.models.load_model(model_file_path) """
     output = model.outputs[0] if output_layer_name is None \
         else model.get_layer(output_layer_name).output
     assert len(output.shape) == 2, "Output shape must be (None, int)"
-    #output = output[:, output_index:output_index+1]
-    if negate: output = -output
     if intermediate_layer_name is None:
         for layer in model.layers:
             if not isinstance(layer, tf.keras.layers.InputLayer):
@@ -67,9 +60,7 @@ def compute_gradcam(model, image, class_index=None):
     with tf.GradientTape() as tape:
         logits, conv_outputs = model(image)
         logits = logits[0]
-        
         negated_logits = -logits
-        
         if class_index is None:
             print("logits: ", logits)
             if logits.numpy()[0] > 0 and logits.numpy()[1] > 0:
@@ -83,9 +74,6 @@ def compute_gradcam(model, image, class_index=None):
                 else:
                     print("Image is screen spoof")
                 class_score = negated_logits[class_index]
-        """ if class_index is None:
-            class_index = tf.argmin(logits[0]) """
-        
         print("class_score: ", class_score)
         
     grads = tape.gradient(class_score, conv_outputs)
@@ -94,22 +82,79 @@ def compute_gradcam(model, image, class_index=None):
     cam = tf.reduce_sum(tf.multiply(conv_outputs, pooled_grads), axis=-1)
     #heatmap = tf.squeeze(conv_outputs[0] @ pooled_grads[..., tf.newaxis])
 
-    # Apply ReLU to the Grad-CAM
     heatmap = tf.maximum(cam, 0)
 
     # Normalize the heatmap to [0, 1]
     heatmap = heatmap / tf.reduce_max(heatmap)
 
-    return heatmap.numpy()
+    return heatmap
 
-def overlay_heatmap(heatmap, image, alpha=0.4):
+def overlay_heatmap_on_image(heatmap, image, alpha=0.6):
     # Resize the heatmap to match the original image dimensions
-    heatmap = cv2.resize(heatmap, (image.shape[1], image.shape[0]))
+    heatmap = cv2.resize(heatmap.numpy(), (image.shape[1], image.shape[0]))
     heatmap = np.uint8(255 * heatmap)
     heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
     heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
     overlayed = cv2.addWeighted(image, alpha, heatmap, 1 - alpha, 0)
     return overlayed
+
+def print_leaky_relu_alpha_values(model):
+    for layer in model.layers:
+        if isinstance(layer, tf.keras.layers.LeakyReLU):
+            print(f"Layer: {layer.name}, Alpha: {layer.alpha}")
+
+def get_leaky_relu_first_alpha_value(model):
+    for layer in model.layers:
+        if isinstance(layer, tf.keras.layers.LeakyReLU):
+            alpha = layer.alpha
+            break
+    return alpha
+
+@tf.custom_gradient
+def guided_leaky_relu(x, alpha=0.3):
+    def grad(dy):
+        return tf.where(dy > 0, dy, 0) * tf.where(x > 0, 1.0, alpha)
+    return tf.nn.leaky_relu(x, alpha), grad #tf.where(x > 0, x, alpha * x)
+
+def modify_model_for_guided_backprop_leaky(model):
+    for layer in model.layers:
+        if isinstance(layer, tf.keras.layers.LeakyReLU):
+            alpha = layer.alpha
+            layer.activation = lambda x, alpha=alpha: guided_leaky_relu(x, alpha)
+    return model
+
+def compute_guided_backprop(model, image, class_index=None):
+    with tf.GradientTape() as tape:
+        tape.watch(image)
+        logits = model(image)[0]
+        negated_logits = -logits
+        if class_index is None:
+            if logits.numpy()[0] > 0 and logits.numpy()[1] > 0:
+                class_index = tf.argmin(logits)
+                class_score = logits[class_index]
+            else:
+                class_index = tf.argmax(negated_logits)
+                class_score = negated_logits[class_index]
+        """ if class_index is None:
+            class_index = tf.argmax(logits[0])
+        class_score = logits[:, class_index] """
+
+    grads = tape.gradient(class_score, image)
+    guided_backprop = tf.maximum(grads, 0)
+    
+    return guided_backprop[0]
+
+def get_guided_gradcam(guided_backprop, gradcam_heatmap, original_image):
+    guided_backprop = (guided_backprop - tf.reduce_min(guided_backprop)) / (tf.reduce_max(guided_backprop) - tf.reduce_min(guided_backprop))
+    guided_backprop = tf.cast(guided_backprop * 255, tf.uint8).numpy()
+    
+    gradcam_heatmap_resized = cv2.resize(gradcam_heatmap.numpy(), (guided_backprop.shape[1], guided_backprop.shape[0]))
+    
+    combined_image = guided_backprop * gradcam_heatmap_resized[:, :, None]
+    combined_image = (combined_image - np.min(combined_image)) / (np.max(combined_image) - np.min(combined_image))
+    combined_image = (combined_image * 255).astype(np.uint8)
+    
+    return combined_image
 
 def main():
     print('=================== Gradcam ==========================')
@@ -125,8 +170,13 @@ def main():
     expected_dims = (640,480,3)
     scale=255.0
 
+    assert modelfile.endswith(".h5"), "Model extension must be .h5"
+    model = tf.keras.models.load_model(modelfile)
+
+    model = modify_model_for_guided_backprop_leaky(model)
+    
     augmented_model = load_augmented_model(
-        model_file_path=modelfile,
+        model=model,
         intermediate_layer_name='conv2d_13',
         output_layer_name="output_layer"
     )
@@ -138,20 +188,36 @@ def main():
             model_input_width == expected_dims[1] and \
             model_input_chans == expected_dims[2]
 
-    image = loadimage(filein)
-    prep_image = preprocess(image, model_input_height, model_input_width, scale)
-    heatmap = compute_gradcam(augmented_model, prep_image)
+    original_image  = loadimage(filein)
+    prep_image = preprocess(original_image , model_input_height, model_input_width, scale)
+    if original_image.shape[1] != model_input_height or original_image.shape[2] != model_input_width:
+        resized_img = np.uint8(255 * prep_image)
+        original_image = np.squeeze(resized_img)
+    
+    gradcam_heatmap = compute_gradcam(augmented_model, prep_image)
     #print("heatmap: ", heatmap)
+    input_image = tf.convert_to_tensor([original_image], dtype=tf.float32)
+    guided_backprop = compute_guided_backprop(model, input_image)
+    gradcam_overlay = overlay_heatmap_on_image(gradcam_heatmap, original_image)
+    guided_gradcam = get_guided_gradcam(guided_backprop, gradcam_heatmap, original_image)
 
-    if image.shape[1] != model_input_height or image.shape[2] != model_input_width:
-        rsz_img = np.uint8(255 * prep_image)
-        image = np.squeeze(rsz_img)
-    overlayed_image = overlay_heatmap(heatmap, image)
-
-    """ plt.matshow(heatmap)
-    plt.show() """
-    plt.imshow(overlayed_image)
+    # Display the images
+    plt.figure(figsize=(15, 5))
+    plt.subplot(1, 3, 1)
+    plt.imshow(original_image)
+    plt.title('Original Image')
     plt.axis('off')
+
+    plt.subplot(1, 3, 2)
+    plt.imshow(gradcam_overlay)
+    plt.title('Grad-CAM Overlay')
+    plt.axis('off')
+
+    plt.subplot(1, 3, 3)
+    plt.imshow(guided_gradcam)
+    plt.title('Guided Grad-CAM')
+    plt.axis('off')
+
     plt.show()
 
 if __name__ == "__main__":
