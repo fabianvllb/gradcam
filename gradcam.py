@@ -159,7 +159,7 @@ def get_guided_gradcam(guided_backprop, gradcam_heatmap, original_image):
 def main():
     print('=================== Gradcam ==========================')
     if len(sys.argv) != 3:
-        print("Args: AS model folder, input file/folder")
+        print("Args: AS model folder, input file")
         return
     
     modelfile = sys.argv[1]
@@ -195,13 +195,12 @@ def main():
         original_image = np.squeeze(resized_img)
     
     gradcam_heatmap = compute_gradcam(augmented_model, prep_image)
-    #print("heatmap: ", heatmap)
+    
     input_image = tf.convert_to_tensor([original_image], dtype=tf.float32)
     guided_backprop = compute_guided_backprop(model, input_image)
     gradcam_overlay = overlay_heatmap_on_image(gradcam_heatmap, original_image)
     guided_gradcam = get_guided_gradcam(guided_backprop, gradcam_heatmap, original_image)
 
-    # Display the images
     plt.figure(figsize=(15, 5))
     plt.subplot(1, 3, 1)
     plt.imshow(original_image)
