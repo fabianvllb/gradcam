@@ -3,7 +3,7 @@ from os.path import exists, basename, join, exists, dirname, realpath
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import tensorflow as tf
-#import napari
+import napari
 
 def check_image(img):
     return img is not None and tf.size(img) > 0 and len(img.shape) == 3 and img.dtype == tf.uint8
@@ -76,10 +76,6 @@ def main():
     print(img) """
     """ input_img = prep_input(img_path, expected_dims)
     input_img = tf.keras.applications.densenet.preprocess_input(input_img) """
-    
-    """ plt.imshow(norm_flat_image(input_img[0]), cmap = "gray")
-    plt.axis('off')
-    plt.show() """
 
     """ result = test_model(input_img)
     max_idx = tf.argmax(result,axis = 1)
@@ -100,19 +96,6 @@ def main():
         class_score = logits[class_index]
     grads = tape.gradient(class_score, input_img)
     plot_maps(norm_flat_image(grads[0]), norm_flat_image(input_img[0]))
-
-    """ viewer = napari.view_image(norm_flat_image(grads[0]))
-    viewer.add_image(input_img) """
-
-    """ model = tf.keras.models.load_model(modelfile)
-    model = modify_model_for_guided_backprop_leaky(model) """
-
-    """ input_img = prep_input(img_path)
-    input_img = tf.keras.applications.densenet.preprocess_input(input_img)
-    plt.imshow(norm_flat_image(input_img[0]), cmap = "gray")
-    result = test_model(input_img)
-    max_idx = tf.argmax(result,axis = 1)
-    tf.keras.applications.imagenet_utils.decode_predictions(result.numpy()) """
 
 if __name__ == "__main__":
     main()
