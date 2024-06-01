@@ -3,7 +3,6 @@ from os.path import exists, basename, join, exists, dirname, realpath
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import tensorflow as tf
-import napari
 
 def check_image(img):
     return img is not None and tf.size(img) > 0 and len(img.shape) == 3 and img.dtype == tf.uint8
@@ -43,7 +42,6 @@ def norm_flat_image(img):
     return grads_norm
 
 def plot_maps(img1, img2,vmin=0.3,vmax=0.7, mix_val=2):
-    f = plt.figure(figsize=(15,45))
     plt.subplot(1,3,1)
     plt.imshow(img1,vmin=vmin, vmax=vmax, cmap="gray")
     plt.axis("off")
