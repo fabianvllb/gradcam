@@ -41,7 +41,7 @@ def norm_flat_image(img):
     grads_norm = (grads_norm - tf.reduce_min(grads_norm))/ (tf.reduce_max(grads_norm)- tf.reduce_min(grads_norm))
     return grads_norm
 
-def plot_maps(img1, img2,vmin=0.3,vmax=0.7, mix_val=2):
+def plot_maps(img1, img2, vmin=0.3, vmax=0.7, mix_val=2):
     plt.subplot(1,3,1)
     plt.imshow(img1, vmin=vmin, vmax=vmax, cmap="gray")
     plt.axis("off")
