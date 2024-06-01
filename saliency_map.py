@@ -43,13 +43,13 @@ def norm_flat_image(img):
 
 def plot_maps(img1, img2,vmin=0.3,vmax=0.7, mix_val=2):
     plt.subplot(1,3,1)
-    plt.imshow(img1,vmin=vmin, vmax=vmax, cmap="gray")
+    plt.imshow(img1, vmin=vmin, vmax=vmax, cmap="gray")
     plt.axis("off")
     plt.subplot(1,3,2)
     plt.imshow(img2, cmap = "gray")
     plt.axis("off")
     plt.subplot(1,3,3)
-    plt.imshow(img1*mix_val+img2/mix_val, cmap = "gray" )
+    plt.imshow(img1 * mix_val + img2/mix_val, cmap = "gray" )
     plt.axis("off")
 
     plt.show()
