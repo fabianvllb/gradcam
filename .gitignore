@@ -1,7 +1,9 @@
 data/
+results/
 models/
 venv/
 __pycache__/
+notes/
 
 como_crear_venv.txt
 resize.ort
