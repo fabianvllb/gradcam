@@ -1,14 +1,9 @@
 import sys
-from os.path import exists, basename, join, exists, dirname, realpath
+from os.path import exists, join, exists, dirname, realpath
 import numpy as np
 import cv2
 import tensorflow as tf
-from base import onnxbase
 import matplotlib.pyplot as plt
-
-rsz = onnxbase(join(dirname(realpath(__file__)), "resize.ort"))
-
-sigmoid = lambda x: 1.0 / (1.0 + np.exp(-x))
 
 def check_image(img):
     return img is not None and img.size > 0 and img.ndim == 3 and img.dtype == np.uint8
@@ -19,15 +14,6 @@ def load_image(filename):
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = tf.convert_to_tensor(img, dtype=tf.uint8)
     return img
-
-""" def check_image(img):
-    return img is not None and tf.size(img) > 0 and len(img.shape) == 3 and img.dtype == tf.uint8
-
-def tf_load_image(filename):
-    img = tf.io.read_file(filename)
-    img = tf.image.decode_image(img, channels=3)
-    assert check_image(img)
-    return img """
 
 def preprocess_image(img, height, width, center=0.0, scale=1.0):
     tmp = tf.cast(img, tf.float32)
@@ -61,21 +47,24 @@ def load_augmented_model(model, intermediate_layer_name=None, output_layer_name=
     aug_model.trainable = False
     return aug_model
 
+def print_result(logits):
+    if logits[0] > 0 and logits[1] > 0:
+        print("Image is real")
+    else:
+        class_index = tf.argmin(logits)
+        if class_index == 0:
+            print("Image is paper spoof")
+        else:
+            print("Image is screen spoof")
+
 def compute_gradcam(model, image, class_index=None):
     with tf.GradientTape() as tape:
         logits, conv_outputs = model(image)
         logits = logits[0]
         print("logits: ", logits)
+        print_result(logits)
         if class_index is None:
-            if logits.numpy()[0] > 0 and logits.numpy()[1] > 0:
-                print("Image is real")
-                class_index = tf.argmin(logits)
-            else:
-                class_index = tf.argmin(logits)
-                if class_index == 0:
-                    print("Image is paper spoof")
-                else:
-                    print("Image is screen spoof")
+            class_index = tf.argmin(logits)
         else:
             if class_index == 0:
                 print("Class index set as paper spoof")
@@ -234,7 +223,7 @@ def main():
     plt.axis('off')
 
     plt.subplot(1, 4, 4)
-    plt.imshow(norm_flat_image(guided_backprop) * 2 + norm_flat_image(prep_image[0])/2, cmap = "gray" )
+    plt.imshow(norm_flat_image(guided_gradcam) * 2 + norm_flat_image(prep_image[0]) * 0.5, cmap = "gray" )
     plt.title('Saliency Map Overlay')
     plt.axis("off")
 
