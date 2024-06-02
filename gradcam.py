@@ -1,9 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 import sys
 from os.path import exists, join, exists, dirname, realpath
 import numpy as np
 import cv2
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import argparse
 
 def check_image(img):
     return img is not None and img.size > 0 and img.ndim == 3 and img.dtype == np.uint8
@@ -153,18 +156,27 @@ def norm_flat_image(img):
 
 def main():
     print('=================== Gradcam ==========================')
-    if len(sys.argv) < 3:
-        print("Args: model file, input file, class index")
-        return
+    parser = argparse.ArgumentParser("gradcam.py", description="Gradcam implementation")
+    parser.add_argument("-m", "--model_path", required=True, help="Path to the H5 model")
+    parser.add_argument("-l", "--intermediate_layer", default=None, help="Layer where to calculate the heatmap (def: list will be shown)")
+    parser.add_argument("-o", "--output_layer", default=None, help="Layer that produces the output of interest (def: 1st model output)")
+    parser.add_argument("-j", "--output_index", type=int, default=None, help="Index of interest within the output layer (def: 0)")
+    """ parser.add_argument("-n", "--negate", action="store_true", help="Multiply selected output by -1 (useful to analyze what makes it smaller)")
+    parser.add_argument("-c", "--preproc_center", type=float, default=0.0, help="Subtract it during preprocessing (def: 0)")
+    parser.add_argument("-s", "--preproc_scale", type=float, default=1.0, help="Divide by it during preprocessing (def: 1)")
+    parser.add_argument("-v", "--visualize", action="store_true", help="Display heatmaps")
+    parser.add_argument("-x", "--heatmap_extension", default=None, help="Extension of the float32 file containing the heatmap, if desired (def: None)")
+    parser.add_argument("-r", "--recursive", action="store_true", help="If the inputs are folders, explore them recursively") """
+    parser.add_argument("-i", "--input", required=True, help="Input image or folder")
+    args = parser.parse_args()
     
-    modelfile = sys.argv[1]
-    filein = sys.argv[2]
-    class_index = None
-    if(len(sys.argv) == 4):
-        class_index = int(sys.argv[3])
-    assert exists(filein)
+    modelfile = args.model_path
+    filein = args.input
+    class_index = args.output_index
+
     assert exists(modelfile)
     assert modelfile.endswith(".h5"), "Model extension must be .h5"
+    assert exists(filein)
     
     expected_dims = (640,480,3)
     scale=255.0
@@ -174,8 +186,8 @@ def main():
     
     augmented_model = load_augmented_model(
         model=model,
-        intermediate_layer_name='conv2d_13',
-        output_layer_name="output_layer"
+        intermediate_layer_name=args.intermediate_layer,
+        output_layer_name=args.output_layer, #output_layer_name="output_layer"
     )
 
     model_input_height = augmented_model.input_shape[1]
