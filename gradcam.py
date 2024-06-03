@@ -21,7 +21,6 @@ def load_image(filename):
 def preprocess_image(img, height, width, center=0.0, scale=1.0):
     tmp = tf.cast(img, tf.float32)
     tmp = tf.expand_dims(tmp, axis=0)
-    print(img.shape[1], img.shape[2])
     if img.shape[1] != height or img.shape[2] != width:
         tmp = tf.image.resize(tmp, [height, width])
         tmp = tf.math.floor(tmp + 0.5)
@@ -63,9 +62,9 @@ def print_result(logits):
 def compute_gradcam(model, image, class_index=None):
     with tf.GradientTape() as tape:
         logits, conv_outputs = model(image)
-        logits = logits[0]
-        print("logits: ", logits)
-        print_result(logits)
+        logits = tf.squeeze(logits)
+        result = f"[{logits[0]:.2f}, {logits[1]:.2f}]"
+        print(f"Network output: {result:>32}")
         if class_index is None:
             class_index = tf.argmin(logits)
         else:
@@ -74,7 +73,8 @@ def compute_gradcam(model, image, class_index=None):
             else:
                 print("Class index set as screen spoof")
         class_score = logits[class_index]
-        print("class_score: ", class_score)
+        print(f"Class score: {class_score.numpy():>25.2f}")
+        print_result(logits)
         
     grads = tape.gradient(class_score, conv_outputs)
     pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
@@ -202,9 +202,9 @@ def main():
 
     # if original image was not the same size as the model input, rewrite it to resized image
     if original_image.shape[0] != model_input_height or original_image.shape[1] != model_input_width:
-        print("Image is not the same size as the model input, resizing image...")
-        print("model input dimensions: ", model_input_height, model_input_width)
-        print("image dimensions: ", original_image.shape[0], original_image.shape[1])
+        print(f"Model input dimensions: {model_input_height:>10}x{model_input_width}")
+        print(f"Image dimensions: {original_image.shape[0]:>16}x{original_image.shape[1]}")
+        print("Image is not the same size as the model input, resizing image...\n")
         resized_img = tf.cast(scale * prep_image, tf.uint8)
         original_image = tf.squeeze(resized_img)
         #resized_img = np.uint8(scale * prep_image)
@@ -231,7 +231,7 @@ def main():
 
     plt.subplot(1, 4, 3)
     plt.imshow(norm_flat_image(guided_gradcam), vmin=0.2, vmax=0.7, cmap = "gray")
-    plt.title('Guided Grad-CAM')
+    plt.title('Backpropagation Saliency Map')
     plt.axis('off')
 
     plt.subplot(1, 4, 4)
