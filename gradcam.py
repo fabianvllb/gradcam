@@ -161,10 +161,7 @@ def main():
     parser.add_argument("-l", "--intermediate_layer", default=None, help="Layer where to calculate the heatmap (def: list will be shown)")
     parser.add_argument("-o", "--output_layer", default=None, help="Layer that produces the output of interest (def: 1st model output)")
     parser.add_argument("-j", "--output_index", type=int, default=None, help="Index of interest within the output layer (def: 0)")
-    """ parser.add_argument("-n", "--negate", action="store_true", help="Multiply selected output by -1 (useful to analyze what makes it smaller)")
-    parser.add_argument("-c", "--preproc_center", type=float, default=0.0, help="Subtract it during preprocessing (def: 0)")
-    parser.add_argument("-s", "--preproc_scale", type=float, default=1.0, help="Divide by it during preprocessing (def: 1)")
-    parser.add_argument("-v", "--visualize", action="store_true", help="Display heatmaps")
+    """ parser.add_argument("-v", "--visualize", action="store_true", help="Display heatmaps")
     parser.add_argument("-x", "--heatmap_extension", default=None, help="Extension of the float32 file containing the heatmap, if desired (def: None)")
     parser.add_argument("-r", "--recursive", action="store_true", help="If the inputs are folders, explore them recursively") """
     parser.add_argument("-i", "--input", required=True, help="Input image or folder")
