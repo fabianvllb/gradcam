@@ -1,14 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 import sys
-from os.path import exists, basename, join, exists, dirname, realpath
+from os.path import exists, join, exists, dirname, realpath
 import numpy as np
 import cv2
 import tensorflow as tf
-from base import onnxbase
 import matplotlib.pyplot as plt
-
-rsz = onnxbase(join(dirname(realpath(__file__)), "resize.ort"))
-
-sigmoid = lambda x: 1.0 / (1.0 + np.exp(-x))
+import argparse
 
 def check_image(img):
     return img is not None and img.size > 0 and img.ndim == 3 and img.dtype == np.uint8
@@ -20,19 +18,9 @@ def load_image(filename):
     img = tf.convert_to_tensor(img, dtype=tf.uint8)
     return img
 
-""" def check_image(img):
-    return img is not None and tf.size(img) > 0 and len(img.shape) == 3 and img.dtype == tf.uint8
-
-def tf_load_image(filename):
-    img = tf.io.read_file(filename)
-    img = tf.image.decode_image(img, channels=3)
-    assert check_image(img)
-    return img """
-
 def preprocess_image(img, height, width, center=0.0, scale=1.0):
     tmp = tf.cast(img, tf.float32)
     tmp = tf.expand_dims(tmp, axis=0)
-    print(img.shape[1], img.shape[2])
     if img.shape[1] != height or img.shape[2] != width:
         tmp = tf.image.resize(tmp, [height, width])
         tmp = tf.math.floor(tmp + 0.5)
@@ -61,28 +49,32 @@ def load_augmented_model(model, intermediate_layer_name=None, output_layer_name=
     aug_model.trainable = False
     return aug_model
 
+def print_result(logits):
+    if logits[0] > 0 and logits[1] > 0:
+        print("Image is real")
+    else:
+        class_index = tf.argmin(logits)
+        if class_index == 0:
+            print("Image is paper spoof")
+        else:
+            print("Image is screen spoof")
+
 def compute_gradcam(model, image, class_index=None):
     with tf.GradientTape() as tape:
         logits, conv_outputs = model(image)
-        logits = logits[0]
-        print("logits: ", logits)
+        logits = tf.squeeze(logits)
+        result = f"[{logits[0]:.2f}, {logits[1]:.2f}]"
+        print(f"Network output: {result:>32}")
         if class_index is None:
-            if logits.numpy()[0] > 0 and logits.numpy()[1] > 0:
-                print("Image is real")
-                class_index = tf.argmin(logits)
-            else:
-                class_index = tf.argmin(logits)
-                if class_index == 0:
-                    print("Image is paper spoof")
-                else:
-                    print("Image is screen spoof")
+            class_index = tf.argmin(logits)
         else:
             if class_index == 0:
                 print("Class index set as paper spoof")
             else:
                 print("Class index set as screen spoof")
         class_score = logits[class_index]
-        print("class_score: ", class_score)
+        print(f"Class score: {class_score.numpy():>25.2f}")
+        print_result(logits)
         
     grads = tape.gradient(class_score, conv_outputs)
     pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
@@ -164,18 +156,24 @@ def norm_flat_image(img):
 
 def main():
     print('=================== Gradcam ==========================')
-    if len(sys.argv) < 3:
-        print("Args: model file, input file, class index")
-        return
+    parser = argparse.ArgumentParser("gradcam.py", description="Gradcam implementation")
+    parser.add_argument("-m", "--model_path", required=True, help="Path to the H5 model")
+    parser.add_argument("-l", "--intermediate_layer", default=None, help="Layer where to calculate the heatmap (def: list will be shown)")
+    parser.add_argument("-o", "--output_layer", default=None, help="Layer that produces the output of interest (def: 1st model output)")
+    parser.add_argument("-j", "--output_index", type=int, default=None, help="Index of interest within the output layer (def: 0)")
+    """ parser.add_argument("-v", "--visualize", action="store_true", help="Display heatmaps")
+    parser.add_argument("-x", "--heatmap_extension", default=None, help="Extension of the float32 file containing the heatmap, if desired (def: None)")
+    parser.add_argument("-r", "--recursive", action="store_true", help="If the inputs are folders, explore them recursively") """
+    parser.add_argument("-i", "--input", required=True, help="Input image or folder")
+    args = parser.parse_args()
     
-    modelfile = sys.argv[1]
-    filein = sys.argv[2]
-    class_index = None
-    if(len(sys.argv) == 4):
-        class_index = int(sys.argv[3])
-    assert exists(filein)
+    modelfile = args.model_path
+    filein = args.input
+    class_index = args.output_index
+
     assert exists(modelfile)
     assert modelfile.endswith(".h5"), "Model extension must be .h5"
+    assert exists(filein)
     
     expected_dims = (640,480,3)
     scale=255.0
@@ -185,8 +183,8 @@ def main():
     
     augmented_model = load_augmented_model(
         model=model,
-        intermediate_layer_name='conv2d_13',
-        output_layer_name="output_layer"
+        intermediate_layer_name=args.intermediate_layer,
+        output_layer_name=args.output_layer, #output_layer_name="output_layer"
     )
 
     model_input_height = augmented_model.input_shape[1]
@@ -201,9 +199,9 @@ def main():
 
     # if original image was not the same size as the model input, rewrite it to resized image
     if original_image.shape[0] != model_input_height or original_image.shape[1] != model_input_width:
-        print("Image is not the same size as the model input, resizing image...")
-        print("model input dimensions: ", model_input_height, model_input_width)
-        print("image dimensions: ", original_image.shape[0], original_image.shape[1])
+        print(f"Model input dimensions: {model_input_height:>10}x{model_input_width}")
+        print(f"Image dimensions: {original_image.shape[0]:>16}x{original_image.shape[1]}")
+        print("Image is not the same size as the model input, resizing image...\n")
         resized_img = tf.cast(scale * prep_image, tf.uint8)
         original_image = tf.squeeze(resized_img)
         #resized_img = np.uint8(scale * prep_image)
@@ -230,11 +228,11 @@ def main():
 
     plt.subplot(1, 4, 3)
     plt.imshow(norm_flat_image(guided_gradcam), vmin=0.2, vmax=0.7, cmap = "gray")
-    plt.title('Guided Grad-CAM')
+    plt.title('Backpropagation Saliency Map')
     plt.axis('off')
 
     plt.subplot(1, 4, 4)
-    plt.imshow(norm_flat_image(guided_backprop) * 2 + norm_flat_image(prep_image[0])/2, cmap = "gray" )
+    plt.imshow(norm_flat_image(guided_gradcam) * 2 + norm_flat_image(prep_image[0]) * 0.5, cmap = "gray" )
     plt.title('Saliency Map Overlay')
     plt.axis("off")
 
